@@ -1,0 +1,87 @@
+service: workshop-cloud
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  region: us-east-1
+  stage: dev
+  runtime: provided.al2
+  environment:
+    DYNAMODB_CACHE_TABLE: ${self:service}-${self:provider.stage}-cache-table
+    DB_PASSWORD: password
+  apiGateway:
+    binaryMediaTypes:
+      - '*/*'
+  vpc:
+    securityGroupIds:
+      - sg-0f3a63c1aedfaaed0
+    subnetIds:
+      - subnet-0763ab81850a90c85
+      - subnet-060e3734a67dcea0c
+      - subnet-0004f059490520000
+      - subnet-04587a099a7e65e68
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: "*"
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!tests/**'
+    - '!auth.json'
+functions:
+  web:
+    handler: public/index.php
+    timeout: 28
+    layers:
+      - ${bref:layer.php-81-fpm}
+      - ${bref-extra:redis-php-81}
+      - ${bref-extra:gd-php-81}
+    events:
+      - httpApi: '*'
+  artisan:
+    handler: artisan
+    timeout: 120
+    layers:
+      - ${bref:layer.php-81}
+      - ${bref-extra:redis-php-81}
+      - ${bref-extra:gd-php-81}
+      - ${bref:layer.console}
+plugins:
+  - ./vendor/bref/bref
+  - ./vendor/bref/extra-php-extensions
+  - serverless-lift
+
+constructs:
+  website:
+    domain: workshop-cloud.placetopay.ws
+    certificate: arn:aws:acm:us-east-1:688114292561:certificate/67c27d68-660c-4079-8582-47ea033122ce
+    type: server-side-website
+    assets:
+      '/build/assets/*': public/build/assets
+      '/build/*': public/build
+      '/robots.txt': public/robots.txt
+resources:
+  Resources:
+    CacheTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-cache-table
+        AttributeDefinitions:
+          - AttributeName: key
+            AttributeType: S
+        BillingMode: PAY_PER_REQUEST
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        KeySchema:
+          - AttributeName: key
+            KeyType: HASH
